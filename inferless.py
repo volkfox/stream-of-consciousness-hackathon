@@ -9,9 +9,9 @@ from openai import OpenAI
 
 dotenv.load_dotenv(override=True)
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_API_KEY = ""
 URL = 'https://serverless-v3.inferless.com/api/v1/deepseek-r1-distill-roleplay_c4772ca669da495b969654ecf1800bd0/infer'
-headers = {"Content-Type": "application/json", "Authorization": "Bearer 32245055cfbef41e757faed97874c48c3b31065705e0b70f28ac8d9d88207005011e47e94a77ef794ad1aa92d69fc4b93c0cfae0aa22f7165ae72c5d3adf58c1"}
+headers = {"Content-Type": "application/json", "Authorization": "Bearer "}
 
 
 class EmotionalMeter(BaseModel):
@@ -121,7 +121,7 @@ def process_prompt(system_prompt, user_prompt, debug=False):
     }
     
     try:
-        response = requests.post(URL, headers=headers, data=json.dumps(data))  
+        response = requests.post(URL, headers=headers, data=json.dumps(data), timeout=10)
         if debug:
             print(f"Status Code: {response.status_code}")
             print(f"Response Text: {response.text}")
@@ -139,7 +139,6 @@ def process_prompt(system_prompt, user_prompt, debug=False):
         # Cut everything up to and including </think>
         if '</think>' in response_text:
             response_text = response_text.split('</think>', 1)[1].strip()
-            #return response_text
         return get_structured_info_from_text(response_text.strip(), EmotionalMeter)
         
     except requests.exceptions.RequestException as e:
@@ -155,10 +154,8 @@ def process_prompt(system_prompt, user_prompt, debug=False):
 
 def main():
     parser = argparse.ArgumentParser(description='Process prompts with Sherlock Holmes AI')
-    parser.add_argument('--system', type=str, help='System prompt', default="""context: Mary Jane is 18, and just graduated from her sophomore class in Berkeley University, California. She majors in social sciences and not very good with math. She broke with her high school boyfriend before coming to college and did not find a new one since.  It is good weather outside, and Mary is in the good mood. She sits on the bench in the park when a young guys comes who looks vaguely familiar. 
-
-The guys says: 'Hey Mary do you remember me? I am Vance from your high school.""")
-    parser.add_argument('--user', type=str, help='User prompt', default="Think about the emotional state of Mary and estimate how it changed in this encounter.")
+    parser.add_argument('--system', type=str, help='System prompt', default="""context: Mary Jane is 18, and just graduated from her sophomore class in Berkeley University, California. She majors in social sciences and is not very good with math. She broke up with her high school boyfriend before coming to college and did not find a new one since. It is good weather outside, and Mary is in a good mood. She sits on the bench in the park when a young guy comes who looks vaguely familiar.\n\nThe guy says: 'Hey Mary, do you remember me? I am Vance from your high school.'""")
+    parser.add_argument('--user', type=str, help='User prompt', default="Think about the emotional state of the user and estimate how it changed in this encounter.")
     
     args = parser.parse_args()
     
