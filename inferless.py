@@ -1,10 +1,70 @@
 import requests 
 import json
-import re
+import os
+import dotenv
 import argparse
+from pydantic import BaseModel, Field
+from typing import List
+from openai import OpenAI
 
+dotenv.load_dotenv(override=True)
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 URL = 'https://serverless-v3.inferless.com/api/v1/deepseek-r1-distill-roleplay_c4772ca669da495b969654ecf1800bd0/infer'
 headers = {"Content-Type": "application/json", "Authorization": "Bearer 32245055cfbef41e757faed97874c48c3b31065705e0b70f28ac8d9d88207005011e47e94a77ef794ad1aa92d69fc4b93c0cfae0aa22f7165ae72c5d3adf58c1"}
+
+
+class EmotionalMeter(BaseModel):
+    current_mood: int = Field(
+        ...,
+        description=f"Current emotional state change as integer in range -50 (lowest) to +50 (highest) in the increments of 10."
+    )
+
+
+def get_structured_info_from_text(text: str, query_class: BaseModel) -> BaseModel:
+    """
+    Extract structured information from the provided text using OpenAI's chat API.
+    """
+    def get_extraction_messages(text: str, query_class: BaseModel):
+        return [
+            {"role": "system", "content": "You are an AI assistant skilled in extracting changes inemotional state from context of human life."},
+            {"role": "user", "content": (
+                f"Extract structured information based on the following JSON schema: "
+                f"{json.dumps(query_class.model_json_schema()['properties'], indent=2)}. "
+                f"Context to extract from: {text}"
+            )}
+        ]
+    messages = get_extraction_messages(text, query_class)
+
+    openai_client = OpenAI(api_key=OPENAI_API_KEY)
+    response = openai_client.chat.completions.create(
+        model="gpt-4o-2024-08-06",
+        messages=messages,
+    )
+    if response and response.choices and response.choices[0].message.content:
+        extracted_json = response.choices[0].message.content.strip()
+        if extracted_json:
+            response2 = openai_client.beta.chat.completions.parse(
+                model="gpt-4o-2024-08-06",
+                messages=[
+                    {"role": "system", "content": "Extract proper JSON from the following text."},
+                    {"role": "user", "content": extracted_json}
+                ],
+                response_format=query_class,
+            )
+            if response2 and response2.choices and response2.choices[0].message.parsed:
+                return response2.choices[0].message.parsed
+            else:
+                print("Failed to parse structured info.")
+                return query_class()
+        else:
+            print("Empty response from OpenAI.")
+            return query_class()
+    else:
+        print("Failed to retrieve structured info.")
+        return query_class()
+
+
 
 def process_prompt(system_prompt, user_prompt, debug=False):
     
@@ -79,8 +139,8 @@ def process_prompt(system_prompt, user_prompt, debug=False):
         # Cut everything up to and including </think>
         if '</think>' in response_text:
             response_text = response_text.split('</think>', 1)[1].strip()
-            return response_text
-        return response_text.strip()
+            #return response_text
+        return get_structured_info_from_text(response_text.strip(), EmotionalMeter)
         
     except requests.exceptions.RequestException as e:
         print(f"Request error: {e}")
@@ -97,12 +157,12 @@ def main():
     parser = argparse.ArgumentParser(description='Process prompts with Sherlock Holmes AI')
     parser.add_argument('--system', type=str, help='System prompt', default="""context: Mary Jane is 18, and just graduated from her sophomore class in Berkeley University, California. She majors in social sciences and not very good with math. She broke with her high school boyfriend before coming to college and did not find a new one since.  It is good weather outside, and Mary is in the good mood. She sits on the bench in the park when a young guys comes who looks vaguely familiar. 
 
-The guys says: 'Hey Mary do you remember me? I am Vance from your high school'""")
-    parser.add_argument('--user', type=str, help='User prompt', default="Think about the emotional state of Mary and how it changed in this encounter and output an qulity of it ranging from 'depression' to 'unhappy' to 'neutral', to 'positive', to 'happiness'. Your output must only be the measure, nothing else.")
+The guys says: 'Hey Mary do you remember me? I am Vance from your high school.""")
+    parser.add_argument('--user', type=str, help='User prompt', default="Think about the emotional state of Mary and estimate how it changed in this encounter.")
     
     args = parser.parse_args()
     
-    result = process_prompt(args.system, args.user, debug=False)
+    result = process_prompt(args.system, args.user, debug=True)
     print(f"Emotional state measure: {result}")
 
 if __name__ == "__main__":
